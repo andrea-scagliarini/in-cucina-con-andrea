@@ -1,0 +1,13 @@
+{
+  "name": "in-cucina-con-andrea",
+  "version": "2.0.0",
+  "description": "Blog di cucina fullstack: API Node + SQLite, frontend SPA con effetti visivi e sonori",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test \"test/*.test.js\""
+  }
+}

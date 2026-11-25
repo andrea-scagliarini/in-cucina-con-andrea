@@ -26,7 +26,7 @@ export async function recipeView({ params }) {
   const page = html`
   <article>
     <header class="rhero">
-      <div data-parallax="0.18" class="rhero__bg">${media(r, { eager: true })}</div>
+      <div data-parallax="0.18" class="rhero__bg">${media(r, { eager: true, sizes: '100vw' })}</div>
       <div class="rhero__inner">
         <nav class="crumbs" aria-label="Percorso"><a href="/" data-link>Ricette</a><span>/</span><a href="/?categoria=${encodeURIComponent(r.category)}" data-link>${r.category}</a></nav>
         <h1>${r.title}</h1>

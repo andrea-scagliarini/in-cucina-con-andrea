@@ -127,10 +127,19 @@ test('upload accetta solo immagini reali', async () => {
   assert.equal(file.headers.get('content-type'), 'image/png');
 });
 
-test('newsletter', async () => {
-  assert.equal((await call('/api/newsletter', { method: 'POST', body: { email: 'non-valida' } })).status, 400);
-  assert.equal((await call('/api/newsletter', { method: 'POST', body: { email: 'a@b.it' } })).status, 201);
-  assert.equal((await call('/api/newsletter', { method: 'POST', body: { email: 'a@b.it' } })).data.already, true);
+test('newsletter: consenso obbligatorio, iscrizione e cancellazione', async () => {
+  assert.equal((await call('/api/newsletter', { method: 'POST', body: { email: 'non-valida', consent: true } })).status, 400);
+  const noConsent = await call('/api/newsletter', { method: 'POST', body: { email: 'a@b.it' } });
+  assert.equal(noConsent.status, 400, 'senza consenso non ci si iscrive');
+  assert.equal((await call('/api/newsletter', { method: 'POST', body: { email: 'a@b.it', consent: true } })).status, 201);
+  assert.equal((await call('/api/newsletter', { method: 'POST', body: { email: 'a@b.it', consent: true } })).data.already, true);
+  const row = srv.db.prepare('SELECT consent_at FROM subscribers WHERE email = ?').get('a@b.it');
+  assert.ok(row.consent_at, 'la data del consenso viene registrata');
+  // cancellazione: stessa risposta se l'indirizzo esiste o no (niente enumerazione)
+  const del = await call('/api/newsletter/unsubscribe', { method: 'POST', body: { email: 'a@b.it' } });
+  const none = await call('/api/newsletter/unsubscribe', { method: 'POST', body: { email: 'mai-iscritto@b.it' } });
+  assert.deepEqual(del.data, none.data);
+  assert.equal(srv.db.prepare('SELECT COUNT(*) AS n FROM subscribers WHERE email = ?').get('a@b.it').n, 0);
 });
 
 test('static: sicurezza, SEO e fallback SPA', async () => {

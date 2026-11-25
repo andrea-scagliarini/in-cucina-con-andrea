@@ -33,6 +33,51 @@ const SECURITY_HEADERS = {
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+const isoDuration = (min) => {
+  if (!(min > 0)) return undefined;
+  const h = Math.floor(min / 60), m = min % 60;
+  return `PT${h ? `${h}H` : ''}${m ? `${m}M` : ''}`;
+};
+
+/** Serializza JSON-LD in modo sicuro dentro un tag <script> (niente chiusura prematura del tag). */
+const ldScript = (data) => {
+  const json = JSON.stringify(data).replace(/</g, '\\u003c');
+  return `<script type="application/ld+json">${json}</script>`;
+};
+
+/** Dati strutturati schema.org/Recipe: abilitano i rich result (foto, tempi, voti) su Google. */
+export function recipeJsonLd(r, { base, author, ratingAgg }) {
+  const abs = (u) => (u.startsWith('/') ? base + u : u);
+  const images = [];
+  if (r.image) {
+    const m = /^(\/uploads\/[0-9a-f-]+)-960\.webp$/.exec(r.image);
+    if (m) images.push(`${m[1]}-1600.webp`, `${m[1]}-960.webp`, `${m[1]}-480.webp`);
+    else images.push(r.image);
+  }
+  const ld = {
+    '@context': 'https://schema.org',
+    '@type': 'Recipe',
+    name: r.title,
+    description: r.excerpt || undefined,
+    image: images.length ? images.map(abs) : undefined,
+    author: { '@type': 'Person', name: author },
+    datePublished: r.createdAt ? `${r.createdAt.replace(' ', 'T')}Z` : undefined,
+    dateModified: r.updatedAt ? `${r.updatedAt.replace(' ', 'T')}Z` : undefined,
+    prepTime: isoDuration(r.prepMinutes),
+    cookTime: isoDuration(r.cookMinutes),
+    totalTime: isoDuration(r.prepMinutes + r.cookMinutes),
+    recipeYield: `${r.servings} porzioni`,
+    recipeCategory: r.category,
+    recipeCuisine: 'Italiana',
+    keywords: r.tags.length ? r.tags.join(', ') : undefined,
+    recipeIngredient: r.ingredients.map((i) => [i.amount ?? '', i.unit, i.name].filter((x) => x !== '').join(' ')),
+    recipeInstructions: r.steps.map((s) => ({ '@type': 'HowToStep', text: s.text })),
+    aggregateRating: ratingAgg?.count > 0 ? { '@type': 'AggregateRating', ratingValue: ratingAgg.avg, ratingCount: ratingAgg.count, bestRating: 5, worstRating: 1 } : undefined,
+    mainEntityOfPage: abs(`/ricette/${r.slug}`),
+  };
+  return JSON.parse(JSON.stringify(ld)); // rimuove i campi undefined
+}
+
 /** Crea l'handler HTTP + risorse da chiudere allo shutdown. */
 export function createApp({ db, config }) {
   mkdirSync(config.uploadsDir, { recursive: true });
@@ -86,7 +131,7 @@ export function createApp({ db, config }) {
       return true;
     }
     if (url.pathname === '/sitemap.xml') {
-      const urls = ['/', '/chi-sono', ...publishedRecipes().map((r) => `/ricette/${r.slug}`)];
+      const urls = ['/', '/chi-sono', '/privacy', ...publishedRecipes().map((r) => `/ricette/${r.slug}`)];
       send(req, res, 200,
         `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls
           .map((u) => `<url><loc>${escXml(base + u)}</loc></url>`).join('')}</urlset>`, xml);
@@ -110,26 +155,45 @@ export function createApp({ db, config }) {
     let desc = 'Un blog di cucina pugliese e non solo: ricette passo passo, timer, modalità cucina e tanta atmosfera.';
     let image = '';
     let status = 200;
+    let ld = '';
+    let robots = '';
     const m = /^\/ricette\/([^/]+)\/?$/.exec(url.pathname);
     if (m) {
       const row = db.prepare('SELECT * FROM recipes WHERE slug = ? AND published = 1').get(decodeURIComponent(m[1]));
       if (row) {
-        const r = shapeRecipe(row);
+        const r = shapeRecipe(row, { full: true });
         title = `${r.title} · ${config.siteName}`;
         desc = r.excerpt || desc;
         image = r.image.startsWith('/') ? base + r.image : r.image;
-      } else status = 404;
-    }
+        const ratingAgg = db.prepare('SELECT ROUND(AVG(stars), 2) AS avg, COUNT(*) AS count FROM ratings WHERE recipe_id = ?').get(row.id);
+        ld = ldScript(recipeJsonLd(r, { base, author: config.ownerName || 'Andrea', ratingAgg }));
+      } else { status = 404; robots = '<meta name="robots" content="noindex">'; }
+    } else if (url.pathname === '/') {
+      ld = ldScript({
+        '@context': 'https://schema.org', '@type': 'WebSite', name: config.siteName, url: base,
+        potentialAction: { '@type': 'SearchAction', target: `${base}/?q={search_term_string}`, 'query-input': 'required name=search_term_string' },
+      });
+    } else if (url.pathname === '/privacy') {
+      title = `Informativa sulla privacy · ${config.siteName}`;
+      desc = 'Quali dati raccoglie questo blog, perché e come puoi controllarli o cancellarli.';
+    } else if (url.pathname.startsWith('/admin')) {
+      robots = '<meta name="robots" content="noindex, nofollow">';
+    } else if (forceStatus === 404) robots = '<meta name="robots" content="noindex">';
     const meta = [
       `<title>${esc(title)}</title>`,
       `<meta name="description" content="${esc(desc)}">`,
+      `<link rel="canonical" href="${esc(base + url.pathname)}">`,
+      robots,
       `<meta property="og:title" content="${esc(title)}">`,
       `<meta property="og:description" content="${esc(desc)}">`,
       '<meta property="og:type" content="website">',
       `<meta property="og:url" content="${esc(base + url.pathname)}">`,
+      `<meta property="og:site_name" content="${esc(config.siteName)}">`,
+      '<meta property="og:locale" content="it_IT">',
       image ? `<meta property="og:image" content="${esc(image)}">` : '',
       '<meta name="twitter:card" content="summary_large_image">',
-    ].join('\n    ');
+      ld,
+    ].filter(Boolean).join('\n    ');
     page = page.replace('<!--meta-->', meta);
     send(req, res, forceStatus ?? status, page, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
   }

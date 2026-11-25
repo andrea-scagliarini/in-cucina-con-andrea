@@ -28,6 +28,32 @@ Pannello autore: **/admin**.
 | `SESSION_SECRET` | generato in `data/.secret` | firma dei token |
 | `SITE_URL` | dal `Host` | usato in sitemap, feed e Open Graph |
 | `NODE_ENV=production` | | abilita la cache dell'HTML |
+| `OWNER_NAME` / `OWNER_EMAIL` | vuoti | titolare e contatto mostrati nell'informativa privacy e nei dati strutturati. **Impostali prima di pubblicare** |
+| `BACKUP_EVERY_HOURS` / `BACKUP_KEEP` | `24` / `14` | frequenza e numero di backup conservati (`0` = disattivati) |
+
+## Immagini, SEO, backup e privacy
+
+**Immagini.** Le immagini caricate dal pannello (o scaricate da un URL esterno) vengono ospitate in `data/uploads`.
+Con [`sharp`](https://sharp.pixelplumbing.com) installato (`npm install --save-optional sharp`) diventano WebP in tre
+larghezze (480/960/1600) con `srcset`, auto-rotazione e rimozione dei metadati EXIF/GPS. Senza `sharp` il blog funziona
+lo stesso e salva l'originale così com'è. Il pulsante *Ospita le immagini in locale* (admin → Manutenzione) scarica
+quelle ancora collegate a siti esterni; il downloader accetta solo `http(s)` su porte 80/443, risolve il DNS prima di
+connettersi e blocca indirizzi privati/loopback/link-local (anti-SSRF).
+
+**SEO.** Ogni ricetta pubblica il JSON-LD `schema.org/Recipe` (tempi, ingredienti, passaggi, voti) e un link canonico;
+la home pubblica `WebSite` + `SearchAction`. Le pagine inesistenti e `/admin` sono `noindex`.
+
+**Backup.** Un backup automatico del database all'avvio e poi ogni `BACKUP_EVERY_HOURS` in `data/backups`
+(`VACUUM INTO`, sicuro anche a server acceso). `npm run backup` ne crea uno subito; `npm run restore` elenca i
+backup, `npm run restore -- <nome>` ripristina (con il server fermo) dopo aver verificato l'integrità e salvato il
+database corrente. Le **immagini** (`data/uploads`) non sono nel backup del database: copia anche quella cartella.
+
+**Privacy.** Pagina `/privacy`, consenso esplicito (con data) per la newsletter e cancellazione autonoma dell'indirizzo.
+Il testo è un modello tecnico accurato per ciò che il blog fa oggi, **non una consulenza legale**: fallo rivedere e
+aggiorna l'informativa se aggiungi analytics, pubblicità o altri servizi.
+
+**Contrasti.** `npm run contrast` verifica il rispetto di WCAG AA (4.5:1 testo, 3:1 testo grande) per le coppie di
+colori dei design token, in entrambi i temi. Esce con errore se una coppia scende sotto soglia.
 
 ## Architettura
 

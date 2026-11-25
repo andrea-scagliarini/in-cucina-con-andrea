@@ -7,7 +7,7 @@
 .btn[disabled] { opacity: .55; pointer-events: none; }
 .btn--ghost { background: transparent; color: var(--ink); border: 1.5px solid var(--line); box-shadow: none; }
 .btn--ghost:hover { border-color: var(--accent); color: var(--accent); box-shadow: none; }
-.btn--danger { --b: #c2332b; }
+.btn--danger { --b: var(--danger); }
 .btn--small { padding: .45rem .95rem; font-size: var(--step--1); }
 .btn--basil { --b: var(--basil); }
 
@@ -63,7 +63,7 @@
 .row { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .check { display: inline-flex; align-items: center; gap: .6rem; cursor: pointer; font-weight: 600; }
 .check input { width: 1.2rem; height: 1.2rem; accent-color: var(--accent); }
-.form-error { color: #c2332b; font-weight: 600; min-height: 1.4em; }
+.form-error { color: var(--danger); font-weight: 600; min-height: 1.4em; }
 .search { position: relative; }
 .search input { padding-left: 2.8rem; padding-right: 3rem; border-radius: var(--radius-full); height: 54px; font-size: var(--step-0); box-shadow: var(--shadow-s); }
 .search svg { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--ink-soft); pointer-events: none; }
@@ -81,7 +81,7 @@
 .toast { display: flex; align-items: center; gap: .7rem; width: 100%; padding: .8rem 1.1rem; border-radius: var(--radius-m); background: var(--ink); color: var(--bg); box-shadow: var(--shadow-l); font-weight: 600; animation: toast-in .5s var(--ease-spring) both; pointer-events: auto; }
 .toast.out { animation: toast-out .3s var(--ease-out) forwards; }
 .toast--error { background: #c2332b; color: #fff; }
-.toast--ok { background: var(--basil); color: #fff; }
+.toast--ok { background: var(--basil); color: var(--accent-ink); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(30px) scale(.9); } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(14px) scale(.95); } }
 

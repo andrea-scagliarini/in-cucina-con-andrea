@@ -40,6 +40,7 @@ export async function adminView() {
     throw e;
   }
   const t = stats.totals, max = Math.max(1, ...stats.top.map((x) => x.views));
+  const hasExternal = recipes.items.filter((r) => /^https?:\/\//.test(r.image)).length;
 
   return {
     title: 'Area autore',
@@ -61,6 +62,11 @@ export async function adminView() {
         </tbody></table></div></section>
       <section class="panel" data-reveal><h2>Ultimi commenti</h2>
         ${stats.comments.length ? html`<div class="table-wrap"><table class="table"><tbody>${stats.comments.map((c) => html`<tr><td><b>${c.author}</b> su <a href="/ricette/${c.slug}" data-link>${c.recipe}</a><br><span style="color:var(--ink-soft)">${c.body}</span></td><td>${fmtDate(c.createdAt)}</td><td><button class="btn btn--small btn--danger" data-delc="${c.id}" type="button">Elimina</button></td></tr>`)}</tbody></table></div>` : html`<p>Nessun commento ancora.</p>`}</section>
+      <section class="panel" data-reveal><h2>Manutenzione</h2>
+        <p id="maint-info">Backup disponibili: <b id="bk-n">…</b>${hasExternal ? html` · <span class="pill pill--gold">${hasExternal} immagini su siti esterni</span>` : ''}</p>
+        <div class="chips"><button class="btn btn--ghost" id="backup" type="button">💾 Crea backup ora</button>
+          <button class="btn btn--ghost" id="localize" type="button" ${hasExternal ? '' : raw('disabled')}>🖼 Ospita le immagini in locale</button></div>
+        <p style="color:var(--ink-soft);font-size:var(--step--1);margin-top:var(--space-3)">I backup automatici sono in <code>data/backups</code>. Le immagini caricate in <code>data/uploads</code> vanno copiate a parte.</p></section>
       <section class="panel" data-reveal><h2>Iscritti alla newsletter</h2><p>${t.subscribers} iscritti.</p><button class="btn btn--ghost" id="export" type="button" ${t.subscribers ? '' : raw('disabled')}>Esporta CSV</button></section>
     </div>`,
     after(root) {
@@ -71,6 +77,27 @@ export async function adminView() {
       });
       on(root, 'click', '[data-delc]', async (e, b) => {
         try { await api.deleteComment(b.dataset.delc); b.closest('tr').remove(); sound.play('chop'); } catch (err) { toast(err.message, 'error'); }
+      });
+      api.backups().then(({ items }) => { $('#bk-n', root).textContent = items.length; }).catch(() => {});
+      $('#backup', root).addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          const { backup } = await api.backupNow();
+          toast(`Backup creato: ${backup.name}`, 'ok');
+          const { items } = await api.backups();
+          $('#bk-n', root).textContent = items.length;
+        } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
+      });
+      $('#localize', root).addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        toast('Scarico le immagini…');
+        try {
+          const r = await api.localizeImages();
+          toast(`${r.done} immagini su ${r.total} ospitate in locale`, r.done === r.total ? 'ok' : 'error', 5000);
+          if (r.done) setTimeout(() => navigate('/admin', { replace: true }), 1200);
+        } catch (err) { toast(err.message, 'error'); } finally { btn.disabled = false; }
       });
       $('#export', root)?.addEventListener('click', async () => {
         const { items } = await api.subscribers();

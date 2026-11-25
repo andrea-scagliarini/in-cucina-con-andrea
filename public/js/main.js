@@ -1,7 +1,7 @@
 import { route, startRouter, onNavigate, setActiveNav, navigate } from './router.js';
 import { homeView } from './views/home.js';
 import { recipeView } from './views/recipe.js';
-import { favoritesView, aboutView, notFoundView } from './views/pages.js';
+import { favoritesView, aboutView, privacyView, notFoundView } from './views/pages.js';
 import { adminView, editorView } from './views/admin.js';
 import { sound } from './audio/engine.js';
 import { fx } from './fx/engine.js';
@@ -15,6 +15,7 @@ route('/', homeView);
 route('/ricette/:slug', recipeView);
 route('/preferiti', favoritesView);
 route('/chi-sono', aboutView);
+route('/privacy', privacyView);
 route('/admin/nuova', editorView);
 route('/admin/modifica/:id', editorView);
 route('/admin', adminView);

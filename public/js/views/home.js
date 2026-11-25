@@ -49,7 +49,7 @@ export async function homeView({ query }) {
   <section class="section" data-reveal aria-labelledby="feat-h">
     <div class="section__head"><h2 id="feat-h">In evidenza</h2><p>La ricetta del momento</p></div>
     <article class="featured">
-      <div class="featured__media">${media(featured, { eager: true })}</div>
+      <div class="featured__media">${media(featured, { eager: true, sizes: '(min-width: 820px) 55vw, 100vw' })}</div>
       <div class="featured__body">
         <div class="chips"><span class="pill">${featured.category}</span><span class="pill pill--gold">⏱ ${fmtMinutes(featured.totalMinutes)}</span></div>
         <h3>${featured.title}</h3>
@@ -97,6 +97,7 @@ export async function homeView({ query }) {
         <label class="sr-only" for="email">Email</label>
         <input class="input" id="email" type="email" placeholder="la-tua@email.it" required autocomplete="email">
         <button class="btn" type="submit">Iscriviti 💌</button>
+        <label class="check consent"><input type="checkbox" id="consent" required> <span>Ho letto l'<a href="/privacy" data-link>informativa sulla privacy</a> e acconsento a ricevere la newsletter. Mi puoi cancellare in qualsiasi momento.</span></label>
       </form>
     </div>
   </section>`;
@@ -177,7 +178,8 @@ export async function homeView({ query }) {
         e.preventDefault();
         const input = $('#email', root);
         try {
-          const r = await api.subscribe(input.value);
+          if (!$('#consent', root).checked) { toast("Spunta il consenso per iscriverti", 'error'); return; }
+          const r = await api.subscribe(input.value, true);
           toast(r.already ? 'Sei già iscritto, grazie!' : 'Iscrizione confermata! 🎉', 'ok');
           if (!r.already) fx.burstFrom(e.submitter ?? input, { count: 30 });
           input.value = '';

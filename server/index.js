@@ -6,6 +6,7 @@ import { openDb } from './db.js';
 import { seedIfEmpty } from './seed.js';
 import { ensureAdmin } from './lib/auth.js';
 import { createApp } from './app.js';
+import { scheduleBackups } from './lib/backup.js';
 
 /** Costruisce il server (usato sia da `npm start` sia dai test). */
 export function buildServer(overrides = {}) {
@@ -14,6 +15,7 @@ export function buildServer(overrides = {}) {
   if (config.seed) seedIfEmpty(db);
   const admin = ensureAdmin(db, config);
   const app = createApp({ db, config });
+  const stopBackups = scheduleBackups(db, config);
   const server = createServer(app.handler);
   server.requestTimeout = 30_000;
   server.headersTimeout = 15_000;
@@ -21,6 +23,7 @@ export function buildServer(overrides = {}) {
   const close = () =>
     new Promise((res) => {
       app.close();
+      stopBackups();
       server.close(() => {
         db.close();
         res();

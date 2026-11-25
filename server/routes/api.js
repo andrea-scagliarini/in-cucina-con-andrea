@@ -1,11 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { Router } from '../lib/router.js';
 import { HttpError, readBody, readJson } from '../lib/http.js';
 import { verifyPassword, signToken } from '../lib/auth.js';
 import { uniqueSlug } from '../db.js';
 import { CATEGORIES, DIFFICULTIES, validateRecipe, validateComment, validateEmail, sniffImage } from '../validate.js';
+import { saveImage, localizeImage } from '../lib/images.js';
+import { createBackup, listBackups } from '../lib/backup.js';
 
 export const HANDLED = Symbol('handled');
 export const reply = (status, body) => ({ __reply: true, status, body });
@@ -121,6 +120,7 @@ export function buildApi({ db, config, events, limiter, secret }) {
       tags: Object.entries(tags).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([name, count]) => ({ name, count })),
       stats,
       live: events.size,
+      site: { ownerName: config.ownerName, ownerEmail: config.ownerEmail },
     };
   });
 
@@ -227,9 +227,18 @@ export function buildApi({ db, config, events, limiter, secret }) {
 
   /* ---------- newsletter ---------- */
   r.post('/api/newsletter', rateLimit('newsletter', 5, 10 * 60_000), async (ctx) => {
-    const email = validateEmail((await readJson(ctx.req, config.maxJsonBytes)).email);
-    const res = db.prepare('INSERT OR IGNORE INTO subscribers (email) VALUES (?)').run(email);
+    const body = await readJson(ctx.req, config.maxJsonBytes);
+    if (body.consent !== true) throw new HttpError(400, "Per iscriverti devi accettare l'informativa sulla privacy");
+    const email = validateEmail(body.email);
+    const res = db.prepare("INSERT OR IGNORE INTO subscribers (email, consent_at) VALUES (?, datetime('now'))").run(email);
     return reply(res.changes ? 201 : 200, { ok: true, already: res.changes === 0 });
+  });
+
+  // Cancellazione dei propri dati: risposta identica che l'indirizzo esista o no (niente enumerazione).
+  r.post('/api/newsletter/unsubscribe', rateLimit('unsub', 5, 10 * 60_000), async (ctx) => {
+    const email = validateEmail((await readJson(ctx.req, config.maxJsonBytes)).email);
+    db.prepare('DELETE FROM subscribers WHERE email = ?').run(email);
+    return { ok: true };
   });
 
   /* ---------- tempo reale ---------- */
@@ -239,8 +248,13 @@ export function buildApi({ db, config, events, limiter, secret }) {
   });
 
   /* ---------- admin: ricette ---------- */
+  const hostImage = async (d) => {
+    if (/^https?:\/\//.test(d.image)) d.image = (await localizeImage(d.image, config.uploadsDir)) ?? d.image;
+  };
+
   r.post('/api/recipes', requireAdmin, async (ctx) => {
     const d = validateRecipe(await readJson(ctx.req, config.maxJsonBytes));
+    await hostImage(d);
     const slug = uniqueSlug(db, d.title);
     const res = db
       .prepare(
@@ -260,6 +274,7 @@ export function buildApi({ db, config, events, limiter, secret }) {
   r.put('/api/recipes/:id', requireAdmin, async (ctx) => {
     const row = recipeOr404(ctx.params.id);
     const d = validateRecipe(await readJson(ctx.req, config.maxJsonBytes));
+    if (d.image !== row.image) await hostImage(d);
     const slug = d.title === row.title ? row.slug : uniqueSlug(db, d.title, row.id);
     db.prepare(
       `UPDATE recipes SET slug=?, title=?, excerpt=?, category=?, difficulty=?, prep_minutes=?, cook_minutes=?, servings=?,
@@ -278,12 +293,31 @@ export function buildApi({ db, config, events, limiter, secret }) {
   /* ---------- admin: upload, commenti, statistiche ---------- */
   r.post('/api/upload', requireAdmin, async (ctx) => {
     const buf = await readBody(ctx.req, config.maxUploadBytes);
-    const ext = sniffImage(buf);
-    if (!ext) throw new HttpError(415, 'Formato non supportato (PNG, JPG, WEBP o GIF)');
-    const name = `${randomUUID()}${ext}`;
-    await writeFile(resolve(config.uploadsDir, name), buf);
-    return reply(201, { url: `/uploads/${name}` });
+    if (!sniffImage(buf)) throw new HttpError(415, 'Formato non supportato (PNG, JPG, WEBP o GIF)');
+    let saved;
+    try {
+      saved = await saveImage(buf, config.uploadsDir);
+    } catch {
+      throw new HttpError(422, 'Immagine non valida o danneggiata');
+    }
+    return reply(201, { url: saved.url, optimized: saved.optimized });
   });
+
+  // Ospita in locale tutte le immagini ancora collegate a siti esterni.
+  r.post('/api/admin/localize-images', requireAdmin, async () => {
+    const rows = db.prepare("SELECT id, title, image FROM recipes WHERE image LIKE 'http%'").all();
+    const results = [];
+    for (const row of rows) {
+      const local = await localizeImage(row.image, config.uploadsDir);
+      if (local) db.prepare("UPDATE recipes SET image = ?, updated_at = datetime('now') WHERE id = ?").run(local, row.id);
+      results.push({ id: row.id, title: row.title, ok: !!local });
+    }
+    return { total: rows.length, done: results.filter((x) => x.ok).length, results };
+  });
+
+  /* ---------- admin: backup ---------- */
+  r.get('/api/admin/backups', requireAdmin, () => ({ items: listBackups(config.backupDir) }));
+  r.post('/api/admin/backups', requireAdmin, rateLimit('backup', 6, 60_000), () => reply(201, { backup: createBackup(db, config.backupDir, config.backupKeep) }));
 
   r.get('/api/admin/stats', requireAdmin, () => {
     const totals = db

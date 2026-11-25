@@ -67,11 +67,42 @@ CREATE TABLE IF NOT EXISTS subscribers (
 );
 `;
 
+/**
+ * Migrazioni versionate (PRAGMA user_version). Ogni migrazione è idempotente, così funziona
+ * sia su database nuovi sia su quelli creati prima dell'introduzione delle migrazioni.
+ */
+const hasColumn = (db, table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+
+const MIGRATIONS = [
+  // 1: schema iniziale (creato da SCHEMA)
+  () => {},
+  // 2: data del consenso alla newsletter
+  (db) => {
+    if (!hasColumn(db, 'subscribers', 'consent_at')) db.exec('ALTER TABLE subscribers ADD COLUMN consent_at TEXT');
+  },
+];
+
+function migrate(db) {
+  const current = db.prepare('PRAGMA user_version').get().user_version;
+  for (let v = current; v < MIGRATIONS.length; v++) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      MIGRATIONS[v](db);
+      db.exec(`PRAGMA user_version = ${v + 1}`);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw new Error(`Migrazione ${v + 1} fallita: ${e.message}`);
+    }
+  }
+}
+
 export function openDb(file) {
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 

@@ -51,10 +51,13 @@ export function fmtDuration(sec) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-/** Immagine ricetta con fallback a gradiente + emoji se manca o non carica. */
-export function media(r, { eager = false } = {}) {
+/** Immagine ricetta responsive (srcset WebP se disponibile) con fallback a gradiente + emoji. */
+const CARD_SIZES = '(min-width: 1000px) 380px, (min-width: 640px) 45vw, 100vw';
+export function media(r, { eager = false, sizes = CARD_SIZES } = {}) {
   if (!r.image) return html`<div class="ph" role="img" aria-label="${r.title}">${r.emoji}</div>`;
-  return html`<img src="${r.image}" alt="${r.title}" loading="${eager ? 'eager' : 'lazy'}" decoding="async" data-fallback="${r.emoji}" referrerpolicy="no-referrer">`;
+  const m = /^(\/uploads\/[0-9a-f-]+)-960\.webp$/.exec(r.image);
+  const srcset = m ? `${m[1]}-480.webp 480w, ${m[1]}-960.webp 960w, ${m[1]}-1600.webp 1600w` : '';
+  return html`<img src="${r.image}" ${srcset ? raw(`srcset="${srcset}" sizes="${esc(sizes)}"`) : ''} alt="${r.title}" loading="${eager ? 'eager' : 'lazy'}" ${eager ? raw('fetchpriority="high"') : ''} decoding="async" data-fallback="${r.emoji}" referrerpolicy="no-referrer">`;
 }
 
 /** Sostituisce le immagini rotte con il placeholder (le immagini esterne possono sparire). */
